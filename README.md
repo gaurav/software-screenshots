@@ -72,8 +72,12 @@ height, 28px less than the image's.
 
 For a tool with a web UI, check out each version of interest in its own `git worktree`, start it,
 and take one shot per version with `--repo <worktree>`, naming the files so they sort by time:
-`2026-10-14_pr-140_corner-menu.png`. The checking out and starting differ per tool, so that part
-is a scratch script under `data/` (git-ignored), not something this repository keeps.
+`2026-10-14_pr-140_corner-menu.png`. The checking out and starting differ per tool, so each series
+is a script of its own under `examples/`, writing into `data/` (git-ignored).
+
+[examples/prcoder-evolution](examples/prcoder-evolution/README.md) is the first: ten frames of
+[prcoder](https://github.com/gaurav/prcoder), one per pull request, each from that pull request's
+own code. `node examples/prcoder-evolution/series.mjs` takes them all.
 
 ## Tests
 
