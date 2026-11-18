@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { existsSync, mkdtempSync, readFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
@@ -38,6 +38,14 @@ test('capture writes a PNG of the ratio and a sidecar, and retake reproduces it'
   const c = await capture({ url, output: out, width: 640, scale: 1, caption: 'url' });
   assert.deepEqual(size(out), [640, 360]);
   assert.equal(c.viewport.height, 332);
+
+  // --setup runs against the page before the capture, and its path is kept for a retake.
+  const setup = path.join(path.dirname(out), 'setup.mjs');
+  writeFileSync(setup, "export default async (page) => { await page.evaluate(() => { document.title = 'Set up'; }); };\n");
+  const withSetup = await capture({ url, output: path.join(path.dirname(out), 'setup.png'), width: 640, scale: 1, setup });
+  assert.equal(withSetup.pageTitle, 'Set up');
+  assert.equal(withSetup.options.setup, setup);
+  assert.equal((await retake(sidecarPath(path.join(path.dirname(out), 'setup.png')))).pageTitle, 'Set up');
 
   const again = await retake(sidecarPath(out));
   assert.deepEqual(size(out), [640, 360]);
