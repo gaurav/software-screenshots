@@ -68,6 +68,65 @@ repo and meta) and replaces the image and the sidecar.
 check out to take the same picture the same way. With a caption, `viewport.height` is the page's
 height, 28px less than the image's.
 
+## shot term
+
+A frame of a command's terminal output, for a tool with no page to load:
+
+```sh
+node shot.mjs term -o data/status.png --cols 120 --show 'milestones status' -- uv run milestones status
+```
+
+The command runs in a pseudo-terminal, so a tool that colours its output only for a terminal
+colours it here, and its bytes are drawn by [xterm.js](https://xtermjs.org) in the same headless
+page a URL's shot is taken in. `--output`, `--ratio`, `--width`, `--scale`, `--browser`, `--repo`,
+`--meta` and `--caption` mean what they do above. Its own options:
+
+| Option | Default | |
+| --- | --- | --- |
+| `-- <command>...` | | Everything after `--` is the command and its arguments. |
+| `--cols <n>` | `100` | The terminal's width in characters. The font is sized so that they fill the frame, and the rows are however many then fit: 100 columns at 16:9 is 28 rows. The command sees a terminal of exactly that size. |
+| `--theme <name>` | `dark` | Or `light`. |
+| `--font <css>` | Menlo, or the platform's monospace | A CSS `font-family`. |
+| `--show <text>` | the command | What the prompt line above the output says was run, when that is not what was: `milestones`, not `/path/to/.venv/bin/milestones`. The sidecar records both. |
+| `--no-prompt` | | No prompt line. |
+| `--scroll <end>` | `bottom` | Output longer than the frame shows its last screenful, as a terminal would. `top` shows its first. |
+| `--cwd <dir>` | here | Where the command runs. |
+| `--env KEY=value` | | Repeatable. Variables for the command, over this shell's. They go in the sidecar, so no secrets. |
+| `--until <regex>` | | For a command that does not end, like a server: stop it once its output matches, and take the frame. Matched against the text without its colour codes. |
+| `--timeout <ms>` | | With `--until`, how long to wait for the match (default 30000) before failing. Alone, stop the command after this long and take what is there. |
+| `--replay <file.ansi>` | | Instead of a command: draw bytes recorded earlier. |
+
+A line that wrapped, or output that did not fit, is a warning on stderr and a count in the
+sidecar (`wrapped`, `scrolledOff`), since a table folded at the frame's edge is rarely the picture
+wanted: raise `--cols`.
+
+Beside the image and its sidecar goes `<name>.ansi`, the bytes the command wrote. `shot retake`
+on a terminal's sidecar runs the command again; when the frame came from `--replay`, it draws
+the recording again.
+
+In the sidecar, `terminal` takes the place of `url`, `finalUrl` and `pageTitle`:
+
+```json
+"terminal": {
+  "command": ["uv", "run", "milestones", "status"],
+  "shown": "milestones status",
+  "cwd": "/path/to/the/tool", "env": {}, "exitCode": 0,
+  "recording": "status.ansi",
+  "cols": 120, "rows": 34, "fontSize": 17.25, "font": "Menlo, …", "theme": "dark",
+  "prompt": "$ ", "scroll": "bottom", "until": null, "timeout": null,
+  "lines": 19, "wrapped": 0, "scrolledOff": 0
+}
+```
+
+`term.mjs` also exports `spawnPty` and `record`, for a script that has to start a server in a
+terminal, photograph its page, and then photograph the terminal.
+
+### Installing
+
+`npm install` and `npm ci` run `tools/postinstall.mjs`, which makes node-pty's prebuilt
+`spawn-helper` executable. npm does not, and without it every `shot term` fails with a bare
+`posix_spawnp failed`. `npm install <package>` does not run it: follow it with `npm install`.
+
 ## A series through a tool's history
 
 For a tool with a web UI, check out each version of interest in its own `git worktree`, start it,
