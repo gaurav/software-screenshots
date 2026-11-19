@@ -173,6 +173,9 @@ for (const [i, f] of FRAMES.entries()) {
         board: f.views.includes('home') ? `${url.origin}/r/${BOARD}/${url.hash}` : url.href,
         home: `${url.origin}/${url.hash}`,
       };
+      // capture() in this process, not shot.mjs through execFileSync as the
+      // prcoder series runs it: while this process is blocked nothing reads the
+      // server's terminal, and a server logging into a full one waits there.
       for (const view of f.views.filter((v) => v !== 'term')) {
         took(await capture({ url: pages[view], output: output(view), width: WIDTH, setup: path.join(here, 'setup.mjs'), repo: wt, meta: { ...meta, view } }));
       }
