@@ -4,6 +4,12 @@ Tools for taking screenshots of software for presentations: no browser chrome, a
 ratio, and a JSON sidecar beside every image saying how it was made, so it can be cited and taken
 again when the software changes.
 
+- [`shot <url>`](#shot) takes a page.
+- [`shot term -- <command>`](#shot-term) takes a command's output in a terminal.
+- [`shot index` and `shot sheet`](#shot-index-and-shot-sheet) make a table and a contact sheet of
+  a directory of frames.
+- [`shot retake`](#taking-them-again) takes any of them again from its sidecar.
+
 ## shot
 
 ```sh
@@ -173,15 +179,21 @@ A key the frame does not have is left empty.
 
 ## A series through a tool's history
 
-For a tool with a web UI, check out each version of interest in its own `git worktree`, start it,
-and take one shot per version with `--repo <worktree>`, naming the files so they sort by time:
-`2026-10-14_pr-140_corner-menu.png`. The checking out and starting differ per tool, so each series
-is a script of its own under `examples/`, writing into `data/` (git-ignored).
+Check out each version of interest in its own `git worktree`, start it, and take one shot per
+version with `--repo <worktree>`: `shot` for a tool with a page, `shot term` for one that prints
+to a terminal. Name the files so they sort in the order the story is told, and end with
+`shot index` and `shot sheet`. The checking out and starting differ per tool, so each series is a
+script of its own under `examples/`, writing into `data/` (git-ignored).
 
-[examples/prcoder-evolution](examples/prcoder-evolution/README.md) is the first: ten frames of
-[prcoder](https://github.com/gaurav/prcoder), one per pull request, each from that pull request's
-own code. `node examples/prcoder-evolution/series.mjs` takes them all.
+- [examples/prcoder-evolution](examples/prcoder-evolution/README.md): ten frames of
+  [prcoder](https://github.com/gaurav/prcoder), one per pull request, each from that pull
+  request's own code. `node examples/prcoder-evolution/series.mjs` takes them all.
+- [examples/milestones-evolution](examples/milestones-evolution/README.md): twelve steps of
+  [milestones](https://github.com/gaurav/milestones), from a table in a terminal to a board in a
+  browser, with a terminal frame, a page, or both at each. It shows how to photograph a server's
+  page and then its terminal, and how to keep an old version of a tool that writes to GitHub
+  from writing. `node examples/milestones-evolution/series.mjs` takes them all.
 
 ## Tests
 
-`npm test`. The capture test skips when Chromium is not installed.
+`npm test`. The tests that take a picture skip when Chromium is not installed.
