@@ -10,9 +10,15 @@
     "shot": "./shot.mjs"
   },
   "scripts": {
-    "test": "node --test \"test/**/*.test.js\""
+    "test": "node --test \"test/**/*.test.js\"",
+    "postinstall": "node tools/postinstall.mjs"
   },
   "dependencies": {
+    "@xterm/xterm": "^6.0.0",
+    "node-pty": "^1.1.0",
     "playwright": "^1.62.1"
+  },
+  "allowScripts": {
+    "node-pty": false
   }
 }

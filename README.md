@@ -4,6 +4,12 @@ Tools for taking screenshots of software for presentations: no browser chrome, a
 ratio, and a JSON sidecar beside every image saying how it was made, so it can be cited and taken
 again when the software changes.
 
+- [`shot <url>`](#shot) takes a page.
+- [`shot term -- <command>`](#shot-term) takes a command's output in a terminal.
+- [`shot index` and `shot sheet`](#shot-index-and-shot-sheet) make a table and a contact sheet of
+  a directory of frames.
+- [`shot retake`](#taking-them-again) takes any of them again from its sidecar.
+
 ## shot
 
 ```sh
@@ -25,6 +31,8 @@ writes `data/example.png` (2560x1440) and `data/example.json`.
 | `--wait-for <css>` | | A selector that must be visible before the capture. |
 | `--delay <ms>` | `0` | Extra time to settle, after everything else. |
 | `--setup <file.mjs>` | | A module whose default export is `async (page) => {}`, given the Playwright page after it loads: click a tab, fill a search box, dismiss a banner. |
+| `--color-scheme <name>` | | `dark` or `light`: what a page that follows the system's appearance is told. Unset, it is told light, whatever this machine is set to. |
+| `--highlight <css>` | | Repeatable. A red ring around the first thing the selector matches, to point at what the frame is about. Drawn last, after `--setup` and `--delay`. A selector matching nothing visible fails the shot. |
 | `--repo <path>` | | The git working tree of the software on screen. Its commit, date, branch and remote go in the sidecar. |
 | `--meta key=value` | | Repeatable. Anything else worth recording: `--meta pr=203`. |
 | `--caption <text>` | | A strip along the bottom, inside the same ratio, carrying the text. `--caption url` shows the page's URL. |
@@ -36,7 +44,7 @@ node shot.mjs retake data/talk/*.json
 ```
 
 takes each shot again from what its sidecar recorded (URL, size, browser, wait, setup, caption,
-repo and meta) and replaces the image and the sidecar.
+colour scheme, highlights, repo and meta) and replaces the image and the sidecar.
 
 ### The sidecar
 
@@ -53,7 +61,7 @@ repo and meta) and replaces the image and the sidecar.
   "pixels": { "width": 2560, "height": 1440 },
   "browser": { "name": "chromium", "version": "159.0.8154.6" },
   "playwright": "1.65.1",
-  "options": { "waitFor": null, "delay": 0, "setup": null, "caption": null },
+  "options": { "waitFor": null, "delay": 0, "setup": null, "caption": null, "colorScheme": null, "highlight": [] },
   "subject": {
     "path": "/path/to/the/tool",
     "repo": "https://github.com/someone/the-tool",
@@ -68,17 +76,124 @@ repo and meta) and replaces the image and the sidecar.
 check out to take the same picture the same way. With a caption, `viewport.height` is the page's
 height, 28px less than the image's.
 
+## shot term
+
+A frame of a command's terminal output, for a tool with no page to load:
+
+```sh
+node shot.mjs term -o data/status.png --cols 120 --show 'milestones status' -- uv run milestones status
+```
+
+The command runs in a pseudo-terminal, so a tool that colours its output only for a terminal
+colours it here, and its bytes are drawn by [xterm.js](https://xtermjs.org) in the same headless
+page a URL's shot is taken in. `--output`, `--ratio`, `--width`, `--scale`, `--browser`, `--repo`,
+`--meta` and `--caption` mean what they do above. Its own options:
+
+| Option | Default | |
+| --- | --- | --- |
+| `-- <command>...` | | Everything after `--` is the command and its arguments. |
+| `--cols <n>` | `100` | The terminal's width in characters. The font is sized so that they fill the frame, and the rows are however many then fit: 100 columns at 16:9 is 28 rows. The command sees a terminal of exactly that size. |
+| `--theme <name>` | `dark` | Or `light`. |
+| `--font <css>` | Menlo, or the platform's monospace | A CSS `font-family`. |
+| `--show <text>` | the command | What the prompt line above the output says was run, when that is not what was: `milestones`, not `/path/to/.venv/bin/milestones`. The sidecar records both. |
+| `--no-prompt` | | No prompt line. |
+| `--scroll <end>` | `bottom` | Output longer than the frame shows its last screenful, as a terminal would. `top` shows its first. |
+| `--cwd <dir>` | here | Where the command runs. |
+| `--env KEY=value` | | Repeatable. Variables for the command, over this shell's. They go in the sidecar, so no secrets. |
+| `--until <regex>` | | For a command that does not end, like a server: stop it once its output matches, and take the frame. Matched against the text without its colour codes. |
+| `--timeout <ms>` | | With `--until`, how long to wait for the match (default 30000) before failing. Alone, stop the command after this long and take what is there. |
+| `--replay <file.ansi>` | | Instead of a command: draw bytes recorded earlier. |
+
+A line that wrapped, or output that did not fit, is a warning on stderr and a count in the
+sidecar (`wrapped`, `scrolledOff`), since a table folded at the frame's edge is rarely the picture
+wanted: raise `--cols`.
+
+Beside the image and its sidecar goes `<name>.ansi`, the bytes the command wrote. `shot retake`
+on a terminal's sidecar runs the command again; when the frame came from `--replay`, it draws
+the recording again.
+
+In the sidecar, `terminal` takes the place of `url`, `finalUrl` and `pageTitle`:
+
+```json
+"terminal": {
+  "command": ["uv", "run", "milestones", "status"],
+  "shown": "milestones status",
+  "cwd": "/path/to/the/tool", "env": {}, "exitCode": 0,
+  "recording": "status.ansi",
+  "cols": 120, "rows": 34, "fontSize": 17.25, "font": "Menlo, …", "theme": "dark",
+  "prompt": "$ ", "scroll": "bottom", "until": null, "timeout": null,
+  "lines": 19, "wrapped": 0, "scrolledOff": 0
+}
+```
+
+`term.mjs` also exports `spawnPty` and `record`, for a script that has to start a server in a
+terminal, photograph its page, and then photograph the terminal.
+
+### Installing
+
+`npm install` and `npm ci` run `tools/postinstall.mjs`, which makes node-pty's prebuilt
+`spawn-helper` executable. npm does not, and without it every `shot term` fails with a bare
+`posix_spawnp failed`. `npm install <package>` does not run it: follow it with `npm install`.
+
+## shot index and shot sheet
+
+Two things made from a directory of frames after they are taken. Both read the sidecars, so
+neither needs the software that was on screen to be running.
+
+```sh
+node shot.mjs index data/talk --title 'The talk' --column 'File={image}' --column 'PR=[#{pr}]({prUrl})' --column 'Commit={commit}'
+node shot.mjs sheet data/talk -o data/talk/sheet.png --label '{date}  #{pr}'
+```
+
+`index` writes `<dir>/README.md`: a table with a row per frame, in file-name order. `--title` and
+`--intro` go above it. Each `--column 'Heading=template'` is a column; with none, the columns are
+the file, the commit when any frame has one, and every `--meta` key.
+
+`sheet` takes one image of every frame, as a grid in file-name order with a label under each: the
+whole series on one slide. It takes `--ratio`, `--width`, `--scale`, `--browser`, `--meta` and
+`--caption` as a shot does, and:
+
+| Option | Default | |
+| --- | --- | --- |
+| `--columns <n>` | whichever makes the thumbnails largest | Frames to a row. |
+| `--label <template>` | `{name}` | The text under each frame. |
+| `--title <text>` | | A heading across the top. |
+| `--theme <name>` | `light` | Or `dark`: the ground the frames sit on. |
+
+A sheet has a sidecar too, listing its frames, and `shot retake` draws it again from the frames
+as they then are. A sheet kept in the directory it is of is not one of its own frames, and is
+not in the index.
+
+A template's `{keys}` are filled in from each frame's sidecar:
+
+| Key | |
+| --- | --- |
+| `{image}`, `{name}` | The file's name, and the same without `.png`. |
+| `{commit}` | The first eight characters of `subject.commit`. |
+| `{date}` | The day of `subject.commitDate`, or of the capture when there was no `--repo`. |
+| `{url}`, `{title}` | The page's final URL and title. |
+| `{command}` | What a terminal frame's prompt line says was run. |
+| anything else | That key of `meta`. A `--meta` key named like one above replaces it: `--meta date=2026-10-14` for a series that dates its frames by something other than the commit. |
+
+A key the frame does not have is left empty.
+
 ## A series through a tool's history
 
-For a tool with a web UI, check out each version of interest in its own `git worktree`, start it,
-and take one shot per version with `--repo <worktree>`, naming the files so they sort by time:
-`2026-10-14_pr-140_corner-menu.png`. The checking out and starting differ per tool, so each series
-is a script of its own under `examples/`, writing into `data/` (git-ignored).
+Check out each version of interest in its own `git worktree`, start it, and take one shot per
+version with `--repo <worktree>`: `shot` for a tool with a page, `shot term` for one that prints
+to a terminal. Name the files so they sort in the order the story is told, and end with
+`shot index` and `shot sheet`. The checking out and starting differ per tool, so each series is a
+script of its own under `examples/`, writing into `data/` (git-ignored).
 
-[examples/prcoder-evolution](examples/prcoder-evolution/README.md) is the first: ten frames of
-[prcoder](https://github.com/gaurav/prcoder), one per pull request, each from that pull request's
-own code. `node examples/prcoder-evolution/series.mjs` takes them all.
+- [examples/prcoder-evolution](examples/prcoder-evolution/README.md): ten frames of
+  [prcoder](https://github.com/gaurav/prcoder), one per pull request, each from that pull
+  request's own code. `node examples/prcoder-evolution/series.mjs` takes them all.
+- [examples/milestones-evolution](examples/milestones-evolution/README.md): twelve steps of
+  [milestones](https://github.com/gaurav/milestones), from a table in a terminal to a board in a
+  browser, with a terminal frame, a page, or both at each. It shows how to photograph a server's
+  page and then its terminal, and how to keep an old version of a tool that writes to GitHub
+  from writing. `node examples/milestones-evolution/series.mjs` takes them all.
 
 ## Tests
 
-`npm test`. The capture test skips when Chromium is not installed.
+`npm test`. The tests that take a picture skip when Chromium is not installed.

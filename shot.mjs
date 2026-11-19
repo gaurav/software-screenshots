@@ -3,6 +3,8 @@
 // sidecar beside it saying how it was made, so it can be cited and retaken.
 //
 //   shot <url> -o out/name.png [options]
+//   shot term -o out/name.png [options] -- <command>...   (term.mjs)
+//   shot index <dir>, shot sheet <dir> -o sheet.png        (sheet.mjs)
 //   shot retake <sidecar.json>...
 //
 // README.md has the options and the sidecar's fields.
@@ -77,46 +79,44 @@ async function launch(name) {
 const escapeHtml = (s) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
 /**
- * Take one screenshot and write its sidecar. Answers the sidecar's contents.
+ * The part every kind of shot shares: a page of the frame's size, the image
+ * with its caption strip, and the sidecar. `draw(page, viewport)` puts on the
+ * page whatever is to be photographed and answers
+ * `{ about, options, captionText }`: `about` is what the sidecar says the
+ * picture is of, `options` what it would take to draw it again.
  *
- * opts: url, output (.png), ratio, width, scale, browser, waitFor, delay,
- * setup (path to a module whose default export is `async (page) => {}`),
- * repo (git working tree of the software on screen), meta (object),
- * caption (text, or "url" for the page's URL).
+ * opts: output (.png), ratio, width, scale, browser, repo (git working tree of
+ * the software on screen), meta (object), caption, colorScheme ("dark" or
+ * "light": what the page's prefers-color-scheme is answered with).
  */
-export async function capture(opts) {
+export async function takeFrame(opts, draw) {
   const {
-    url, output, ratio = '16:9', width = 1280, scale = 2, browser: engine = 'chromium',
-    waitFor = null, delay = 0, setup = null, repo = null, meta = {}, caption = null,
+    output, ratio = '16:9', width = 1280, scale = 2, browser: engine = 'chromium', repo = null, meta = {}, caption = null,
+    colorScheme = null,
   } = opts;
-  if (!url) throw new Error('no URL given');
   if (!output || !/\.png$/i.test(output)) throw new Error('-o wants a path ending in .png');
+  if (colorScheme && !['dark', 'light'].includes(colorScheme)) throw new Error(`--color-scheme ${colorScheme}: want dark or light`);
   const frame = viewportFor(ratio, width);
   // The caption strip comes out of the page's height, so the image is still `ratio`.
   const viewport = caption ? { ...frame, height: frame.height - CAPTION_HEIGHT } : frame;
 
   const browser = await launch(engine);
   try {
-    const page = await browser.newPage({ viewport, deviceScaleFactor: scale });
-    await page.goto(url, { waitUntil: 'load' });
-    if (waitFor) await page.locator(waitFor).first().waitFor({ state: 'visible' });
-    if (setup) await (await import(pathToFileURL(path.resolve(setup)).href)).default(page);
-    if (delay) await page.waitForTimeout(delay);
-    const finalUrl = page.url();
-    const pageTitle = await page.title();
-
+    // Unset, a page is told light: Playwright's default, whatever this machine is set to.
+    const page = await browser.newPage({ viewport, deviceScaleFactor: scale, ...(colorScheme && { colorScheme }) });
     mkdirSync(path.dirname(path.resolve(output)), { recursive: true });
+    const { about, options, captionText = caption } = await draw(page, viewport);
+
     if (!caption) {
       await page.screenshot({ path: output });
     } else {
       const shot = await page.screenshot();
-      const text = caption === 'url' ? finalUrl : caption;
       const framed = await browser.newPage({ viewport: frame, deviceScaleFactor: scale });
       await framed.setContent(`<body style="margin:0;background:#fff">
         <img style="display:block;width:${viewport.width}px;height:${viewport.height}px" src="data:image/png;base64,${shot.toString('base64')}">
         <div style="height:${CAPTION_HEIGHT}px;padding:0 10px;box-sizing:border-box;
           font:13px/${CAPTION_HEIGHT - 1}px ui-monospace,Menlo,monospace;color:#333;background:#f2f2f2;border-top:1px solid #ccc;
-          white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(text)}</div></body>`);
+          white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(captionText)}</div></body>`);
       await framed.screenshot({ path: output });
     }
 
@@ -124,12 +124,12 @@ export async function capture(opts) {
     const sidecar = {
       image: path.basename(output),
       capturedAt: new Date().toISOString(),
-      url, finalUrl, pageTitle,
+      ...about,
       ratio, viewport, scale,
       pixels: { width: frame.width * scale, height: frame.height * scale },
       browser: { name: engine, version: browser.version() },
       playwright: pw.version,
-      options: { waitFor, delay, setup: setup && path.resolve(setup), caption },
+      options,
       subject: repo && gitInfo(repo),
       meta,
       tool: { name: 'software-screenshots', commit: git(here, 'rev-parse', 'HEAD') },
@@ -141,12 +141,59 @@ export async function capture(opts) {
   }
 }
 
+/**
+ * Draw a ring around the first thing `selector` matches, over the page and
+ * outside its layout. Nothing to ring is an error: across the versions of a
+ * tool a selector stops matching, and a frame that silently lost its ring
+ * reads as a frame that never had one.
+ */
+async function ring(page, selector) {
+  const target = page.locator(selector).first();
+  const box = (await target.count()) ? await target.boundingBox() : null;
+  if (!box) throw new Error(`--highlight ${JSON.stringify(selector)}: nothing visible on the page matches`);
+  await page.evaluate(({ x, y, width, height }) => {
+    const gap = 5, line = 3;
+    const el = document.createElement('div');
+    // Red with a white edge either side, so it shows on a dark page and a light one.
+    el.style.cssText = `position:fixed;z-index:2147483647;pointer-events:none;box-sizing:border-box;
+      left:${x - gap - line}px;top:${y - gap - line}px;width:${width + 2 * (gap + line)}px;height:${height + 2 * (gap + line)}px;
+      border:${line}px solid #e5484d;border-radius:8px;box-shadow:0 0 0 1.5px #fff, inset 0 0 0 1.5px #fff`;
+    document.documentElement.append(el);
+  }, box);
+}
+
+/**
+ * Take one screenshot of a URL and write its sidecar. Answers the sidecar's contents.
+ *
+ * opts: what takeFrame takes, and url, waitFor, delay, setup (path to a module
+ * whose default export is `async (page) => {}`), highlight (selectors to ring),
+ * caption (text, or "url" for the page's URL).
+ */
+export async function capture(opts) {
+  const { url, waitFor = null, delay = 0, setup = null, highlight = [], caption = null, colorScheme = null } = opts;
+  if (!url) throw new Error('no URL given');
+  return takeFrame(opts, async (page) => {
+    await page.goto(url, { waitUntil: 'load' });
+    if (waitFor) await page.locator(waitFor).first().waitFor({ state: 'visible' });
+    if (setup) await (await import(pathToFileURL(path.resolve(setup)).href)).default(page);
+    if (delay) await page.waitForTimeout(delay);
+    // Last, on the page as it will be photographed: a ring is placed, not attached.
+    for (const selector of highlight) await ring(page, selector);
+    const finalUrl = page.url();
+    return {
+      about: { url, finalUrl, pageTitle: await page.title() },
+      options: { waitFor, delay, setup: setup && path.resolve(setup), caption, colorScheme, highlight },
+      captionText: caption === 'url' ? finalUrl : caption,
+    };
+  });
+}
+
 /** Take a shot again from what its sidecar recorded, replacing both files. */
 export async function retake(sidecarFile) {
   const s = JSON.parse(readFileSync(sidecarFile, 'utf8'));
-  return capture({
-    url: s.url,
-    output: path.join(path.dirname(sidecarFile), s.image),
+  const dir = path.dirname(sidecarFile);
+  const shared = {
+    output: path.join(dir, s.image),
     ratio: s.ratio,
     // With a caption the recorded viewport is shorter than the frame; its width is not.
     width: s.viewport.width,
@@ -155,30 +202,53 @@ export async function retake(sidecarFile) {
     ...s.options,
     repo: s.subject?.path ?? null,
     meta: s.meta,
-  });
+  };
+  if (s.terminal) return (await import('./term.mjs')).retakeTerminal(shared, s.terminal, dir);
+  if (s.sheet) return (await import('./sheet.mjs')).captureSheet({ ...shared, ...s.sheet });
+  return capture({ url: s.url, ...shared });
 }
 
-const USAGE = `shot <url> -o <name.png> [--ratio 16:9] [--width 1280] [--scale 2] [--browser chromium|firefox]
-     [--wait-for <css>] [--delay <ms>] [--setup <file.mjs>] [--repo <path>] [--meta key=value]... [--caption <text>|url]
+// The options every kind of shot takes, for parseArgs, and what takeFrame wants of them.
+export const FRAME_OPTIONS = {
+  output: { type: 'string', short: 'o' },
+  ratio: { type: 'string', default: '16:9' },
+  width: { type: 'string', default: '1280' },
+  scale: { type: 'string', default: '2' },
+  browser: { type: 'string', default: 'chromium' },
+  repo: { type: 'string' },
+  meta: { type: 'string', multiple: true },
+  caption: { type: 'string' },
+  help: { type: 'boolean', short: 'h' },
+};
+export const frameOptions = (v) => ({
+  output: v.output, ratio: v.ratio, width: Number(v.width), scale: Number(v.scale), browser: v.browser,
+  repo: v.repo ?? null, meta: parseMeta(v.meta), caption: v.caption ?? null,
+});
+
+export const USAGE = `shot <url> -o <name.png> [--ratio 16:9] [--width 1280] [--scale 2] [--browser chromium|firefox]
+     [--wait-for <css>] [--delay <ms>] [--setup <file.mjs>] [--color-scheme dark|light] [--highlight <css>]...
+     [--repo <path>] [--meta key=value]... [--caption <text>|url]
+shot term -o <name.png> [--cols 100] [--theme dark|light] [--show <text>] [--no-prompt] [--scroll bottom|top]
+     [--cwd <dir>] [--env KEY=value]... [--until <regex>] [--timeout <ms>] [--replay <file.ansi>]
+     [--ratio --width --scale --browser --repo --meta --caption, as above] -- <command>...
+shot index <dir> [--title <text>] [--intro <text>] [--column 'Heading=template']...
+shot sheet <dir> -o <sheet.png> [--columns <n>] [--label <template>] [--title <text>] [--theme light|dark]
+     [--ratio --width --scale --browser --meta --caption, as above]
 shot retake <sidecar.json>...`;
 
 async function main(argv) {
+  if (argv[0] === 'term') return (await import('./term.mjs')).main(argv.slice(1));
+  if (argv[0] === 'index' || argv[0] === 'sheet') return (await import('./sheet.mjs')).main(argv);
   const { values: v, positionals } = parseArgs({
     args: argv,
     allowPositionals: true,
     options: {
-      output: { type: 'string', short: 'o' },
-      ratio: { type: 'string', default: '16:9' },
-      width: { type: 'string', default: '1280' },
-      scale: { type: 'string', default: '2' },
-      browser: { type: 'string', default: 'chromium' },
+      ...FRAME_OPTIONS,
       'wait-for': { type: 'string' },
       delay: { type: 'string', default: '0' },
       setup: { type: 'string' },
-      repo: { type: 'string' },
-      meta: { type: 'string', multiple: true },
-      caption: { type: 'string' },
-      help: { type: 'boolean', short: 'h' },
+      'color-scheme': { type: 'string' },
+      highlight: { type: 'string', multiple: true },
     },
   });
   if (v.help || !positionals.length) return console.log(USAGE);
@@ -191,9 +261,9 @@ async function main(argv) {
   }
   if (positionals.length > 1) throw new Error(`one URL at a time, got ${positionals.length}`);
   const s = await capture({
-    url: positionals[0], output: v.output, ratio: v.ratio, width: Number(v.width), scale: Number(v.scale),
-    browser: v.browser, waitFor: v['wait-for'] ?? null, delay: Number(v.delay), setup: v.setup ?? null,
-    repo: v.repo ?? null, meta: parseMeta(v.meta), caption: v.caption ?? null,
+    url: positionals[0], ...frameOptions(v),
+    waitFor: v['wait-for'] ?? null, delay: Number(v.delay), setup: v.setup ?? null,
+    colorScheme: v['color-scheme'] ?? null, highlight: v.highlight ?? [],
   });
   console.log(`${v.output}  ${s.pixels.width}x${s.pixels.height}  ${s.browser.name} ${s.browser.version}`);
 }
