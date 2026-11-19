@@ -18,8 +18,9 @@ node examples/prcoder-evolution/series.mjs 140 203    # or only some
 
 The frames land in `data/prcoder-evolution/`, each a 2880x1620 PNG with its JSON sidecar, named
 so they sort by time: `2026-10-14_pr-140_corner-menu.png`. A merged pull request is dated by its
-merge, an open one by the day of the run. `data/prcoder-evolution/README.md` is an index written
-at the end of every run. A run replaces the frames it takes and leaves the others.
+merge, an open one by the day of the run, both on the running machine's calendar rather than UTC's.
+`data/prcoder-evolution/README.md` is an index written at the end of every run. A run replaces the
+frames it takes, including one of the same pull request under another date, and leaves the others.
 
 `data/` is git-ignored, so the frames are not in this repository: copy the directory to wherever
 the presentation lives.

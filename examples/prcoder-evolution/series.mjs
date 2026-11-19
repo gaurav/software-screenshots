@@ -8,7 +8,7 @@
 //
 // Everything it makes is under data/, which is git-ignored.
 import { execFileSync, spawn, spawnSync } from 'node:child_process';
-import { chmodSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:net';
 import path from 'node:path';
 
@@ -26,6 +26,7 @@ const FRAMES = { 1: 'browser-workspace', 60: 'checks-tab', 112: 'files-pies', 11
 
 const run = (cmd, args, cwd = clone) => execFileSync(cmd, args, { cwd, encoding: 'utf8' }).trim();
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const localDate = (d) => [d.getFullYear(), d.getMonth() + 1, d.getDate()].map((x) => String(x).padStart(2, '0')).join('-');
 // prcoder moves to another port when its own is taken, and the frame would
 // then be of whatever already held this one.
 const free = (port) => new Promise((res, rej) => {
@@ -76,7 +77,9 @@ for (const n of wanted.length ? wanted : Object.keys(FRAMES).map(Number)) {
   run('git', ['fetch', '-q', 'origin', `+refs/pull/${n}/head:${ref}`]);
   const head = run('git', ['rev-parse', ref]);
   // An open pull request is dated today: it is the code as it stands, and so sorts last.
-  const date = (pr.mergedAt ?? new Date().toISOString()).slice(0, 10);
+  // Both on this machine's calendar, not UTC's: an evening merge, or an
+  // evening run, west of Greenwich is otherwise dated the next day.
+  const date = localDate(pr.mergedAt ? new Date(pr.mergedAt) : new Date());
   const name = `${date}_pr-${String(n).padStart(3, '0')}_${FRAMES[n] ?? pr.headRefName.replace(/[^a-z0-9]+/gi, '-')}`;
   const wt = path.join(data, 'wt', `pr-${n}`);
   const port = 17600 + (n % 300);
@@ -111,6 +114,13 @@ for (const n of wanted.length ? wanted : Object.keys(FRAMES).map(Number)) {
       '--meta', `pr=${n}`, '--meta', `prTitle=${pr.title}`, '--meta', `prUrl=${pr.url}`, '--meta', `prState=${pr.state}`,
       '--meta', `mergedAt=${pr.mergedAt ?? ''}`, '--meta', 'agent=stub (tools/claude-stub.mjs from #203), not a live Claude session'],
     { encoding: 'utf8', env: { ...process.env, SERIES_PR: String(n) } }).trim());
+    // This pull request's frame under any other name (an open pull request's
+    // date moves each day) is replaced, not left beside the new one. Only now
+    // the new one is taken, so a failed run leaves the old frame in place.
+    const tag = `_pr-${String(n).padStart(3, '0')}_`;
+    for (const f of readdirSync(out)) {
+      if (f.includes(tag) && !f.startsWith(`${name}.`)) rmSync(path.join(out, f));
+    }
   } finally {
     // The whole group: the server's terminals each hold a stub.
     try { process.kill(-server.pid); } catch {}
