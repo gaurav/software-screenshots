@@ -29,7 +29,26 @@ const STEPS = {
   203: (page) => page.getByText('No milestone').first().click(),
 };
 
+// From #181 prcoder says the last prompt sent once the agent connects: a toast
+// over the queue in #181, a line in #notices from #203. It goes up a moment
+// after the page loads, so it may come after this setup, and a click on its ✕
+// would race it. Instead every one is taken down as it appears, the way
+// prcoder's own ✕ does it: the toast hidden, the notice removed, so an empty
+// #notices collapses (hiding the line with CSS would leave its bar behind).
+function hideLastPrompt() {
+  const sweep = () => {
+    const t = document.getElementById('toast');
+    // Only when shown: setting `hidden` again is itself a mutation, and the
+    // observer would answer it forever.
+    if (t?.dataset.kind === 'last-prompt' && !t.hidden) t.hidden = true;
+    for (const li of document.querySelectorAll('#notices > li[data-kind="last-prompt"]')) li.remove();
+  };
+  sweep();
+  new MutationObserver(sweep).observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ['hidden', 'data-kind'] });
+}
+
 export default async function setup(page) {
   await page.route(WRITES, (route) => route.abort());
+  await page.evaluate(hideLastPrompt);
   await STEPS[process.env.SERIES_PR]?.(page);
 }

@@ -45,7 +45,8 @@ For each pull request, one at a time:
   load. The run gives it prcoder's own stub instead, so the Claude Code pane in every frame is an
   empty terminal.
 - **No real prompts appear.** From #181 prcoder shows Claude Code's prompt history; the run points
-  it at a made-up one under `data/claude-config`.
+  it at a made-up one under `data/claude-config`, and `setup.mjs` takes down the "Last prompt"
+  notice it puts up on load (#181's toast covered the History rows it was taking a picture of).
 - **Nothing is written to GitHub.** prcoder can tick a description's checkbox, mark a file viewed
   and move a pull request between milestones. `setup.mjs` clicks only things that read, and
   refuses those requests in the page besides. #168's milestone line is a picker that moves the
@@ -63,7 +64,5 @@ stopped. Run `series.mjs <n>` again.
 
 ## Known rough edges
 
-- In #181's frame the "Last prompt" notice lies over the first History rows. Both are that pull
-  request's feature. A click on the notice's ✕ in `STEPS` would clear it.
 - A version that does not start fails the run with the tail of `/api/status`; its log is
   `data/wt/pr-<n>.log`.
