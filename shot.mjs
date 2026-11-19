@@ -85,18 +85,24 @@ const escapeHtml = (s) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt
  * picture is of, `options` what it would take to draw it again.
  *
  * opts: output (.png), ratio, width, scale, browser, repo (git working tree of
- * the software on screen), meta (object), caption.
+ * the software on screen), meta (object), caption, colorScheme ("dark" or
+ * "light": what the page's prefers-color-scheme is answered with).
  */
 export async function takeFrame(opts, draw) {
-  const { output, ratio = '16:9', width = 1280, scale = 2, browser: engine = 'chromium', repo = null, meta = {}, caption = null } = opts;
+  const {
+    output, ratio = '16:9', width = 1280, scale = 2, browser: engine = 'chromium', repo = null, meta = {}, caption = null,
+    colorScheme = null,
+  } = opts;
   if (!output || !/\.png$/i.test(output)) throw new Error('-o wants a path ending in .png');
+  if (colorScheme && !['dark', 'light'].includes(colorScheme)) throw new Error(`--color-scheme ${colorScheme}: want dark or light`);
   const frame = viewportFor(ratio, width);
   // The caption strip comes out of the page's height, so the image is still `ratio`.
   const viewport = caption ? { ...frame, height: frame.height - CAPTION_HEIGHT } : frame;
 
   const browser = await launch(engine);
   try {
-    const page = await browser.newPage({ viewport, deviceScaleFactor: scale });
+    // Unset, a page is told light: Playwright's default, whatever this machine is set to.
+    const page = await browser.newPage({ viewport, deviceScaleFactor: scale, ...(colorScheme && { colorScheme }) });
     mkdirSync(path.dirname(path.resolve(output)), { recursive: true });
     const { about, options, captionText = caption } = await draw(page, viewport);
 
@@ -142,7 +148,7 @@ export async function takeFrame(opts, draw) {
  * the page's URL).
  */
 export async function capture(opts) {
-  const { url, waitFor = null, delay = 0, setup = null, caption = null } = opts;
+  const { url, waitFor = null, delay = 0, setup = null, caption = null, colorScheme = null } = opts;
   if (!url) throw new Error('no URL given');
   return takeFrame(opts, async (page) => {
     await page.goto(url, { waitUntil: 'load' });
@@ -152,7 +158,7 @@ export async function capture(opts) {
     const finalUrl = page.url();
     return {
       about: { url, finalUrl, pageTitle: await page.title() },
-      options: { waitFor, delay, setup: setup && path.resolve(setup), caption },
+      options: { waitFor, delay, setup: setup && path.resolve(setup), caption, colorScheme },
       captionText: caption === 'url' ? finalUrl : caption,
     };
   });
@@ -195,7 +201,8 @@ export const frameOptions = (v) => ({
 });
 
 export const USAGE = `shot <url> -o <name.png> [--ratio 16:9] [--width 1280] [--scale 2] [--browser chromium|firefox]
-     [--wait-for <css>] [--delay <ms>] [--setup <file.mjs>] [--repo <path>] [--meta key=value]... [--caption <text>|url]
+     [--wait-for <css>] [--delay <ms>] [--setup <file.mjs>] [--color-scheme dark|light]
+     [--repo <path>] [--meta key=value]... [--caption <text>|url]
 shot term -o <name.png> [--cols 100] [--theme dark|light] [--show <text>] [--no-prompt] [--scroll bottom|top]
      [--cwd <dir>] [--env KEY=value]... [--until <regex>] [--timeout <ms>] [--replay <file.ansi>]
      [--ratio --width --scale --browser --repo --meta --caption, as above] -- <command>...
@@ -211,6 +218,7 @@ async function main(argv) {
       'wait-for': { type: 'string' },
       delay: { type: 'string', default: '0' },
       setup: { type: 'string' },
+      'color-scheme': { type: 'string' },
     },
   });
   if (v.help || !positionals.length) return console.log(USAGE);
@@ -225,6 +233,7 @@ async function main(argv) {
   const s = await capture({
     url: positionals[0], ...frameOptions(v),
     waitFor: v['wait-for'] ?? null, delay: Number(v.delay), setup: v.setup ?? null,
+    colorScheme: v['color-scheme'] ?? null,
   });
   console.log(`${v.output}  ${s.pixels.width}x${s.pixels.height}  ${s.browser.name} ${s.browser.version}`);
 }

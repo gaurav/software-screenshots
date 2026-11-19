@@ -25,6 +25,7 @@ writes `data/example.png` (2560x1440) and `data/example.json`.
 | `--wait-for <css>` | | A selector that must be visible before the capture. |
 | `--delay <ms>` | `0` | Extra time to settle, after everything else. |
 | `--setup <file.mjs>` | | A module whose default export is `async (page) => {}`, given the Playwright page after it loads: click a tab, fill a search box, dismiss a banner. |
+| `--color-scheme <name>` | | `dark` or `light`: what a page that follows the system's appearance is told. Unset, it is told light, whatever this machine is set to. |
 | `--repo <path>` | | The git working tree of the software on screen. Its commit, date, branch and remote go in the sidecar. |
 | `--meta key=value` | | Repeatable. Anything else worth recording: `--meta pr=203`. |
 | `--caption <text>` | | A strip along the bottom, inside the same ratio, carrying the text. `--caption url` shows the page's URL. |
@@ -36,7 +37,7 @@ node shot.mjs retake data/talk/*.json
 ```
 
 takes each shot again from what its sidecar recorded (URL, size, browser, wait, setup, caption,
-repo and meta) and replaces the image and the sidecar.
+colour scheme, repo and meta) and replaces the image and the sidecar.
 
 ### The sidecar
 
@@ -53,7 +54,7 @@ repo and meta) and replaces the image and the sidecar.
   "pixels": { "width": 2560, "height": 1440 },
   "browser": { "name": "chromium", "version": "159.0.8154.6" },
   "playwright": "1.65.1",
-  "options": { "waitFor": null, "delay": 0, "setup": null, "caption": null },
+  "options": { "waitFor": null, "delay": 0, "setup": null, "caption": null, "colorScheme": null },
   "subject": {
     "path": "/path/to/the/tool",
     "repo": "https://github.com/someone/the-tool",

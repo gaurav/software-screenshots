@@ -43,3 +43,16 @@ test('capture writes a PNG of the ratio and a sidecar, and retake reproduces it'
   assert.deepEqual(size(out), [640, 360]);
   assert.deepEqual({ ...again, capturedAt: 0 }, { ...c, capturedAt: 0 });
 });
+
+test('--color-scheme is what the page is told, and light when unset', async (t) => {
+  const { chromium } = await import('playwright');
+  if (!existsSync(chromium.executablePath())) return t.skip('npx playwright install chromium');
+  const out = path.join(mkdtempSync(path.join(os.tmpdir(), 'shot-test-')), 'page.png');
+  // The page says which it was told in its title, which the sidecar keeps.
+  const url = `data:text/html,<script>document.title = matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'</script>`;
+  assert.equal((await capture({ url, output: out, width: 320, scale: 1 })).pageTitle, 'light');
+  const dark = await capture({ url, output: out, width: 320, scale: 1, colorScheme: 'dark' });
+  assert.equal(dark.pageTitle, 'dark');
+  assert.equal((await retake(sidecarPath(out))).pageTitle, 'dark');
+  await assert.rejects(capture({ url, output: out, colorScheme: 'sepia' }), /dark or light/);
+});
