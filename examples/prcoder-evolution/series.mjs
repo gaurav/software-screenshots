@@ -8,9 +8,10 @@
 //
 // Everything it makes is under data/, which is git-ignored.
 import { execFileSync, spawn, spawnSync } from 'node:child_process';
-import { chmodSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, openSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:net';
 import path from 'node:path';
+import { writeIndex } from '../../sheet.mjs';
 
 const here = import.meta.dirname;
 const root = path.join(here, '..', '..');
@@ -111,7 +112,7 @@ for (const n of wanted.length ? wanted : Object.keys(FRAMES).map(Number)) {
     // 1440 wide, as prcoder's own drivers use: its three panes are laid out for it.
     console.log(execFileSync('node', [path.join(root, 'shot.mjs'), `http://localhost:${port}/`, '-o', path.join(out, `${name}.png`),
       '--width', '1440', '--delay', '6000', '--repo', wt, '--setup', path.join(here, 'setup.mjs'),
-      '--meta', `pr=${n}`, '--meta', `prTitle=${pr.title}`, '--meta', `prUrl=${pr.url}`, '--meta', `prState=${pr.state}`,
+      '--meta', `pr=${n}`, '--meta', `date=${date}`, '--meta', `prTitle=${pr.title}`, '--meta', `prUrl=${pr.url}`, '--meta', `prState=${pr.state}`,
       '--meta', `mergedAt=${pr.mergedAt ?? ''}`, '--meta', 'agent=stub (tools/claude-stub.mjs from #203), not a live Claude session'],
     { encoding: 'utf8', env: { ...process.env, SERIES_PR: String(n) } }).trim());
     // This pull request's frame under any other name (an open pull request's
@@ -131,16 +132,9 @@ for (const n of wanted.length ? wanted : Object.keys(FRAMES).map(Number)) {
 }
 
 // An index of whatever frames are there, from their sidecars.
-const rows = readdirSync(out).filter((f) => f.endsWith('.json')).sort().map((f) => {
-  const s = JSON.parse(readFileSync(path.join(out, f), 'utf8'));
-  return `| ${s.image} | [#${s.meta.pr}](${s.meta.prUrl}) ${s.meta.prState.toLowerCase()} | ${s.subject.commit.slice(0, 8)} | ${s.meta.prTitle} |`;
+writeIndex(out, {
+  title: 'prcoder, one frame per pull request',
+  intro: `Each frame is that pull request's own code showing that pull request. The Claude Code pane is a
+stub, not a live session, and the History prompts are made up.`,
+  columns: [['File', '{image}'], ['PR', '[#{pr}]({prUrl}) {prState}'], ['Commit', '{commit}'], ['Showing', '{prTitle}']],
 });
-writeFileSync(path.join(out, 'README.md'), `# prcoder, one frame per pull request
-
-Each frame is that pull request's own code showing that pull request. The Claude Code pane is a
-stub, not a live session, and the History prompts are made up.
-
-| File | PR | Commit | Showing |
-| --- | --- | --- | --- |
-${rows.join('\n')}
-`);

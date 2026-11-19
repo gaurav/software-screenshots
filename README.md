@@ -129,6 +129,48 @@ terminal, photograph its page, and then photograph the terminal.
 `spawn-helper` executable. npm does not, and without it every `shot term` fails with a bare
 `posix_spawnp failed`. `npm install <package>` does not run it: follow it with `npm install`.
 
+## shot index and shot sheet
+
+Two things made from a directory of frames after they are taken. Both read the sidecars, so
+neither needs the software that was on screen to be running.
+
+```sh
+node shot.mjs index data/talk --title 'The talk' --column 'File={image}' --column 'PR=[#{pr}]({prUrl})' --column 'Commit={commit}'
+node shot.mjs sheet data/talk -o data/talk/sheet.png --label '{date}  #{pr}'
+```
+
+`index` writes `<dir>/README.md`: a table with a row per frame, in file-name order. `--title` and
+`--intro` go above it. Each `--column 'Heading=template'` is a column; with none, the columns are
+the file, the commit when any frame has one, and every `--meta` key.
+
+`sheet` takes one image of every frame, as a grid in file-name order with a label under each: the
+whole series on one slide. It takes `--ratio`, `--width`, `--scale`, `--browser`, `--meta` and
+`--caption` as a shot does, and:
+
+| Option | Default | |
+| --- | --- | --- |
+| `--columns <n>` | whichever makes the thumbnails largest | Frames to a row. |
+| `--label <template>` | `{name}` | The text under each frame. |
+| `--title <text>` | | A heading across the top. |
+| `--theme <name>` | `light` | Or `dark`: the ground the frames sit on. |
+
+A sheet has a sidecar too, listing its frames, and `shot retake` draws it again from the frames
+as they then are. A sheet kept in the directory it is of is not one of its own frames, and is
+not in the index.
+
+A template's `{keys}` are filled in from each frame's sidecar:
+
+| Key | |
+| --- | --- |
+| `{image}`, `{name}` | The file's name, and the same without `.png`. |
+| `{commit}` | The first eight characters of `subject.commit`. |
+| `{date}` | The day of `subject.commitDate`, or of the capture when there was no `--repo`. |
+| `{url}`, `{title}` | The page's final URL and title. |
+| `{command}` | What a terminal frame's prompt line says was run. |
+| anything else | That key of `meta`. A `--meta` key named like one above replaces it: `--meta date=2026-10-14` for a series that dates its frames by something other than the commit. |
+
+A key the frame does not have is left empty.
+
 ## A series through a tool's history
 
 For a tool with a web UI, check out each version of interest in its own `git worktree`, start it,

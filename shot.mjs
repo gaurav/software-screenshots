@@ -4,6 +4,7 @@
 //
 //   shot <url> -o out/name.png [options]
 //   shot term -o out/name.png [options] -- <command>...   (term.mjs)
+//   shot index <dir>, shot sheet <dir> -o sheet.png        (sheet.mjs)
 //   shot retake <sidecar.json>...
 //
 // README.md has the options and the sidecar's fields.
@@ -203,6 +204,7 @@ export async function retake(sidecarFile) {
     meta: s.meta,
   };
   if (s.terminal) return (await import('./term.mjs')).retakeTerminal(shared, s.terminal, dir);
+  if (s.sheet) return (await import('./sheet.mjs')).captureSheet({ ...shared, ...s.sheet });
   return capture({ url: s.url, ...shared });
 }
 
@@ -229,10 +231,14 @@ export const USAGE = `shot <url> -o <name.png> [--ratio 16:9] [--width 1280] [--
 shot term -o <name.png> [--cols 100] [--theme dark|light] [--show <text>] [--no-prompt] [--scroll bottom|top]
      [--cwd <dir>] [--env KEY=value]... [--until <regex>] [--timeout <ms>] [--replay <file.ansi>]
      [--ratio --width --scale --browser --repo --meta --caption, as above] -- <command>...
+shot index <dir> [--title <text>] [--intro <text>] [--column 'Heading=template']...
+shot sheet <dir> -o <sheet.png> [--columns <n>] [--label <template>] [--title <text>] [--theme light|dark]
+     [--ratio --width --scale --browser --meta --caption, as above]
 shot retake <sidecar.json>...`;
 
 async function main(argv) {
   if (argv[0] === 'term') return (await import('./term.mjs')).main(argv.slice(1));
+  if (argv[0] === 'index' || argv[0] === 'sheet') return (await import('./sheet.mjs')).main(argv);
   const { values: v, positionals } = parseArgs({
     args: argv,
     allowPositionals: true,
