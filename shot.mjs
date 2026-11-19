@@ -141,24 +141,47 @@ export async function takeFrame(opts, draw) {
 }
 
 /**
+ * Draw a ring around the first thing `selector` matches, over the page and
+ * outside its layout. Nothing to ring is an error: across the versions of a
+ * tool a selector stops matching, and a frame that silently lost its ring
+ * reads as a frame that never had one.
+ */
+async function ring(page, selector) {
+  const target = page.locator(selector).first();
+  const box = (await target.count()) ? await target.boundingBox() : null;
+  if (!box) throw new Error(`--highlight ${JSON.stringify(selector)}: nothing visible on the page matches`);
+  await page.evaluate(({ x, y, width, height }) => {
+    const gap = 5, line = 3;
+    const el = document.createElement('div');
+    // Red with a white edge either side, so it shows on a dark page and a light one.
+    el.style.cssText = `position:fixed;z-index:2147483647;pointer-events:none;box-sizing:border-box;
+      left:${x - gap - line}px;top:${y - gap - line}px;width:${width + 2 * (gap + line)}px;height:${height + 2 * (gap + line)}px;
+      border:${line}px solid #e5484d;border-radius:8px;box-shadow:0 0 0 1.5px #fff, inset 0 0 0 1.5px #fff`;
+    document.documentElement.append(el);
+  }, box);
+}
+
+/**
  * Take one screenshot of a URL and write its sidecar. Answers the sidecar's contents.
  *
  * opts: what takeFrame takes, and url, waitFor, delay, setup (path to a module
- * whose default export is `async (page) => {}`), caption (text, or "url" for
- * the page's URL).
+ * whose default export is `async (page) => {}`), highlight (selectors to ring),
+ * caption (text, or "url" for the page's URL).
  */
 export async function capture(opts) {
-  const { url, waitFor = null, delay = 0, setup = null, caption = null, colorScheme = null } = opts;
+  const { url, waitFor = null, delay = 0, setup = null, highlight = [], caption = null, colorScheme = null } = opts;
   if (!url) throw new Error('no URL given');
   return takeFrame(opts, async (page) => {
     await page.goto(url, { waitUntil: 'load' });
     if (waitFor) await page.locator(waitFor).first().waitFor({ state: 'visible' });
     if (setup) await (await import(pathToFileURL(path.resolve(setup)).href)).default(page);
     if (delay) await page.waitForTimeout(delay);
+    // Last, on the page as it will be photographed: a ring is placed, not attached.
+    for (const selector of highlight) await ring(page, selector);
     const finalUrl = page.url();
     return {
       about: { url, finalUrl, pageTitle: await page.title() },
-      options: { waitFor, delay, setup: setup && path.resolve(setup), caption, colorScheme },
+      options: { waitFor, delay, setup: setup && path.resolve(setup), caption, colorScheme, highlight },
       captionText: caption === 'url' ? finalUrl : caption,
     };
   });
@@ -201,7 +224,7 @@ export const frameOptions = (v) => ({
 });
 
 export const USAGE = `shot <url> -o <name.png> [--ratio 16:9] [--width 1280] [--scale 2] [--browser chromium|firefox]
-     [--wait-for <css>] [--delay <ms>] [--setup <file.mjs>] [--color-scheme dark|light]
+     [--wait-for <css>] [--delay <ms>] [--setup <file.mjs>] [--color-scheme dark|light] [--highlight <css>]...
      [--repo <path>] [--meta key=value]... [--caption <text>|url]
 shot term -o <name.png> [--cols 100] [--theme dark|light] [--show <text>] [--no-prompt] [--scroll bottom|top]
      [--cwd <dir>] [--env KEY=value]... [--until <regex>] [--timeout <ms>] [--replay <file.ansi>]
@@ -219,6 +242,7 @@ async function main(argv) {
       delay: { type: 'string', default: '0' },
       setup: { type: 'string' },
       'color-scheme': { type: 'string' },
+      highlight: { type: 'string', multiple: true },
     },
   });
   if (v.help || !positionals.length) return console.log(USAGE);
@@ -233,7 +257,7 @@ async function main(argv) {
   const s = await capture({
     url: positionals[0], ...frameOptions(v),
     waitFor: v['wait-for'] ?? null, delay: Number(v.delay), setup: v.setup ?? null,
-    colorScheme: v['color-scheme'] ?? null,
+    colorScheme: v['color-scheme'] ?? null, highlight: v.highlight ?? [],
   });
   console.log(`${v.output}  ${s.pixels.width}x${s.pixels.height}  ${s.browser.name} ${s.browser.version}`);
 }

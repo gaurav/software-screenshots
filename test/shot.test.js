@@ -56,3 +56,17 @@ test('--color-scheme is what the page is told, and light when unset', async (t) 
   assert.equal((await retake(sidecarPath(out))).pageTitle, 'dark');
   await assert.rejects(capture({ url, output: out, colorScheme: 'sepia' }), /dark or light/);
 });
+
+test('--highlight rings what its selector matches, and fails when nothing does', async (t) => {
+  const { chromium } = await import('playwright');
+  if (!existsSync(chromium.executablePath())) return t.skip('npx playwright install chromium');
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'shot-test-'));
+  const url = 'data:text/html,<body style="margin:0"><p id=a style="margin:40px;width:100px;height:20px">new</p><p id=gone hidden>old</p>';
+  const plain = path.join(dir, 'plain.png'), ringed = path.join(dir, 'ringed.png');
+  await capture({ url, output: plain, width: 320, scale: 1 });
+  const s = await capture({ url, output: ringed, width: 320, scale: 1, highlight: ['#a'] });
+  assert.deepEqual(s.options.highlight, ['#a']);
+  assert.notDeepEqual(readFileSync(ringed), readFileSync(plain));
+  await assert.rejects(capture({ url, output: ringed, highlight: ['#missing'] }), /--highlight "#missing": nothing visible/);
+  await assert.rejects(capture({ url, output: ringed, highlight: ['#gone'] }), /nothing visible/);
+});
